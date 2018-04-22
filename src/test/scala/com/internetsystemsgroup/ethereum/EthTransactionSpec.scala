@@ -68,7 +68,7 @@ class EthTransactionSpec extends FunSpec with Matchers {
           |    }
           |  } ]
           |}""".stripMargin
-    }
+      }
 
     it("should serialize to Avro JSON") {
       val writer = new SpecificDatumWriter[GenericRecord](schema)
@@ -80,13 +80,13 @@ class EthTransactionSpec extends FunSpec with Matchers {
 
       out.toString shouldBe
         s"""{
-           |  "hash" : "0xthisIsAHash",
-           |  "from" : "0x12345678",
-           |  "to" : "0xtoAddress",
-           |  "value" : "\\u0010\\u0000\\u0000\\u0000",
-           |  "gasPrice" : "\\u0010\\u0000\\u0000\\u0000",
-           |  "gas" : "\\u0010\\u0000\\u0000\\u0000"
-           |}""".stripMargin
+          |  "hash" : "0xthisIsAHash",
+          |  "from" : "0x12345678",
+          |  "to" : "0xtoAddress",
+          |  "value" : "\\u0010\\u0000\\u0000\\u0000",
+          |  "gasPrice" : "\\u0010\\u0000\\u0000\\u0000",
+          |  "gas" : "\\u0010\\u0000\\u0000\\u0000"
+          |}""".stripMargin
     }
 
     it("should serialize to and from Avro binary") {

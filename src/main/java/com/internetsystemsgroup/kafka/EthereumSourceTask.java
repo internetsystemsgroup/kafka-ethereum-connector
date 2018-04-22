@@ -24,6 +24,7 @@ import java.util.*;
 import java.util.concurrent.ConcurrentLinkedQueue;
 
 import com.internetsystemsgroup.ethereum.EthTransaction;
+import com.internetsystemsgroup.ethereum.EthereumTransaction;
 import com.internetsystemsgroup.ethereum.Web3jAdapter;
 import org.apache.kafka.connect.data.Schema;
 import org.apache.kafka.connect.source.SourceRecord;
@@ -34,16 +35,19 @@ import org.web3j.protocol.Web3j;
 import org.web3j.protocol.core.DefaultBlockParameter;
 import org.web3j.protocol.core.methods.response.EthBlock;
 import org.web3j.protocol.http.HttpService;
+import scala.None;
+import scala.Option;
+import scala.Some;
 
 /**
  * EthereumSourceTask reads transactions from an Ethereum server using the web3j API
  */
 public class EthereumSourceTask extends SourceTask {
     private static final Logger log = LoggerFactory.getLogger(EthereumSourceTask.class);
-    public static final String ENDPOINT_FIELD = "endpoint";
-    public  static final String BLOCK_FIELD = "block";
-    public  static final String TXN_COUNT_FIELD = "size";
-    public  static final String TXN_OFFSET_FIELD = "offset";
+    private static final String ENDPOINT_FIELD = "endpoint";
+    private  static final String BLOCK_FIELD = "block";
+    private  static final String TXN_COUNT_FIELD = "size";
+    private  static final String TXN_OFFSET_FIELD = "offset";
 
     private static final Schema VALUE_SCHEMA = Schema.STRING_SCHEMA;
 
@@ -54,7 +58,8 @@ public class EthereumSourceTask extends SourceTask {
     private String topic = null;
     private int batchSize = EthereumSourceConnector.DEFAULT_TASK_BATCH_SIZE;
 
-    private Long startingBlock;
+    private BigInteger startingBlock;
+    private BigInteger startingOffset;
 
     private Web3j web3j;
 
@@ -75,15 +80,29 @@ public class EthereumSourceTask extends SourceTask {
         log.info("Connecting to Ethereum node:" + endpoint);
         web3j = Web3j.build(new HttpService(endpoint));
 
-        queue = new ConcurrentLinkedQueue<EthBlock.Block>();
+        queue = new ConcurrentLinkedQueue<>();
 
         //TODO determine last processed block and transaction
-        startingBlock = 5470634L;
+        // Continue from last offset
+        Map<String, Object> offset = context.offsetStorageReader().offset(offsetKey(endpoint));
+        if (offset != null) {
+            BigInteger lastRecordedBlock = BigInteger.valueOf((long) offset.get(BLOCK_FIELD));
+            BigInteger lastRecordedSize = BigInteger.valueOf((long) offset.get(TXN_COUNT_FIELD));
+            BigInteger lastRecordedOffset = BigInteger.valueOf((long) offset.get(TXN_OFFSET_FIELD));
 
-        web3j.catchUpToLatestAndSubscribeToNewBlocksObservable(DefaultBlockParameter.valueOf(BigInteger.valueOf(startingBlock)), true)
-                .subscribe(block -> {
-                    writeBlockToQueue(block);
-                });
+            startingBlock = lastRecordedBlock;
+            startingOffset = lastRecordedOffset.add(BigInteger.ONE);
+            if (startingOffset.longValue() == lastRecordedSize.longValue()) {
+                startingBlock = startingBlock.add(BigInteger.ONE);
+                startingOffset = BigInteger.ZERO;
+            }
+        } else {
+            startingBlock = BigInteger.valueOf(46147);  // The 1st block that contains a transaction
+            startingOffset = BigInteger.ZERO;
+        }
+
+        web3j.catchUpToLatestAndSubscribeToNewBlocksObservable(DefaultBlockParameter.valueOf(startingBlock), true)
+                .subscribe(this::writeBlockToQueue);
     }
 
     private void writeBlockToQueue(EthBlock response)
@@ -110,24 +129,41 @@ public class EthereumSourceTask extends SourceTask {
                 EthBlock.Block block = queue.remove();
                 List<EthBlock.TransactionResult> transactions = block.getTransactions();
                 log.info("Writing block to message array. block=" + block.getNumber() + " size=" + transactions.size());
-                for (EthBlock.TransactionResult tx : transactions)
-                {
-                    EthBlock.TransactionObject txObj = (EthBlock.TransactionObject) tx;
-                    EthTransaction etx = Web3jAdapter.web3jTransaction2EthTransaction(txObj);
-
-                    log.info("Writing transaction to message array. block=" + txObj.getBlockNumber() + " size=" + transactions.size() + " offset=" + txObj.getTransactionIndex());
+                if (transactions.size() == 0) {
                     records.add(new SourceRecord(
                             offsetKey(endpoint),
-                            offsetValue(txObj.getBlockNumber(),transactions.size(),txObj.getTransactionIndex()),
+                            offsetValue(block.getNumber(), transactions.size(), BigInteger.ZERO),
                             topic,
                             null,
                             null,
                             null,
                             VALUE_SCHEMA,
-                            etx.asAvroJson(),
+                            EthereumTransaction.NONE().asAvroJson(),
                             System.currentTimeMillis()
                     ));
+                } else {
+                    for (EthBlock.TransactionResult tx : transactions) {
+                        EthBlock.TransactionObject txObj = (EthBlock.TransactionObject) tx;
+                        log.info("this tran index = " + txObj.getTransactionIndex().longValue() + " vs startingOffset = " + startingOffset.longValue());
+                        if (txObj.getTransactionIndex().longValue() < startingOffset.longValue())
+                            continue;
+                        EthereumTransaction etx = Web3jAdapter.web3jTransaction2EthereumTransaction(txObj);
+
+                        log.info("Writing transaction to message array. block=" + txObj.getBlockNumber() + " size=" + transactions.size() + " offset=" + txObj.getTransactionIndex());
+                        records.add(new SourceRecord(
+                                offsetKey(endpoint),
+                                offsetValue(txObj.getBlockNumber(), transactions.size(), txObj.getTransactionIndex()),
+                                topic,
+                                null,
+                                null,
+                                null,
+                                VALUE_SCHEMA,
+                                etx.asAvroJson(),
+                                System.currentTimeMillis()
+                        ));
+                    }
                 }
+                startingOffset = BigInteger.ZERO;
                 if (records.size() >= batchSize) {
                     log.info("Returning from poll() with " + records.size() + " records");
                     return records;
