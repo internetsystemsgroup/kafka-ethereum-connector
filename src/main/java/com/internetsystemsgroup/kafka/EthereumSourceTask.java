@@ -19,14 +19,12 @@
 */
 package com.internetsystemsgroup.kafka;
 
-import java.io.*;
 import java.math.BigInteger;
-import java.nio.charset.StandardCharsets;
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
+import java.util.concurrent.ConcurrentLinkedQueue;
 
+import com.internetsystemsgroup.ethereum.EthTransaction;
+import com.internetsystemsgroup.ethereum.Web3jAdapter;
 import org.apache.kafka.connect.data.Schema;
 import org.apache.kafka.connect.source.SourceRecord;
 import org.apache.kafka.connect.source.SourceTask;
@@ -43,22 +41,18 @@ import org.web3j.protocol.http.HttpService;
 public class EthereumSourceTask extends SourceTask {
     private static final Logger log = LoggerFactory.getLogger(EthereumSourceTask.class);
     public static final String ENDPOINT_FIELD = "endpoint";
-    public  static final String POSITION_FIELD = "position";
+    public  static final String BLOCK_FIELD = "block";
+    public  static final String TXN_COUNT_FIELD = "size";
+    public  static final String TXN_OFFSET_FIELD = "offset";
+
     private static final Schema VALUE_SCHEMA = Schema.STRING_SCHEMA;
 
-    private String endPoint;
-    private PipedInputStream stream;
-    private PipedOutputStream outputStream;
-    private PrintWriter pw;
+    private String endpoint;
 
-    private BufferedReader reader = null;
+    private ConcurrentLinkedQueue<EthBlock.Block> queue;
 
-    private char[] buffer = new char[1024];
-    private int offset = 0;
     private String topic = null;
     private int batchSize = EthereumSourceConnector.DEFAULT_TASK_BATCH_SIZE;
-
-    private Long streamOffset;
 
     private Long startingBlock;
 
@@ -72,203 +66,98 @@ public class EthereumSourceTask extends SourceTask {
 
     @Override
     public void start(Map<String, String> props) {
-        endPoint = props.get(EthereumSourceConnector.ENDPOINT_CONFIG);
-        // Missing topic or parsing error is not possible because we've parsed the config in the
-        // Connector
+        log.info("Starting EthereumSourceTask");
+        endpoint = props.get(EthereumSourceConnector.ENDPOINT_CONFIG);
         topic = props.get(EthereumSourceConnector.TOPIC_CONFIG);
         batchSize = Integer.parseInt(props.get(EthereumSourceConnector.TASK_BATCH_SIZE_CONFIG));
 
-        try {
-            initializeWeb3j();
-        } catch (Exception e) {
-            e.printStackTrace();
-        }
+        // configuration is validated in the Connector class
+        log.info("Connecting to Ethereum node:" + endpoint);
+        web3j = Web3j.build(new HttpService(endpoint));
 
-        // Set up the pipe
-        stream = new PipedInputStream();
-        try {
-            outputStream = new PipedOutputStream(stream);
-        } catch (IOException e) {
-            e.printStackTrace();
-        }
-        pw = new PrintWriter(outputStream);
-
-        // Setup the reader
-        reader = new BufferedReader(new InputStreamReader(stream, StandardCharsets.UTF_8));
+        queue = new ConcurrentLinkedQueue<EthBlock.Block>();
 
         //TODO determine last processed block and transaction
         startingBlock = 5470634L;
 
         web3j.catchUpToLatestAndSubscribeToNewBlocksObservable(DefaultBlockParameter.valueOf(BigInteger.valueOf(startingBlock)), true)
                 .subscribe(block -> {
-                    writeBlockToPipe(block);
+                    writeBlockToQueue(block);
                 });
     }
 
-    /**
-     * Persist blocks and transactions.
-     *
-     * @param block
-     *            the block
-     */
-    private void writeBlockToPipe(EthBlock block)
+    private void writeBlockToQueue(EthBlock response)
     {
-        log.info("Writing block: " + block.getBlock().getNumber());
+        EthBlock.Block block = response.getResult();
+        log.info("Writing block to queue: " + block.getNumber());
 
-        for (EthBlock.TransactionResult tx : block.getResult().getTransactions())
-        {
-            EthBlock.TransactionObject txObj = (EthBlock.TransactionObject) tx;
-
-            log.info("Writing transaction: " + txObj.getTransactionIndex());
-            pw.println(
-                    txObj.getHash() + "," +
-                    txObj.getFrom() + "," +
-                    txObj.getTo() + "," +
-                    txObj.getValue() + "," +
-                    txObj.getGasPrice() + "," +
-                    txObj.getGas() + "," +
-                    txObj.getInput() + "," +
-                    txObj.getCreates() + "," +
-                    txObj.getRaw()
-            );
-        }
-
-        pw.flush();  // TODO is this needed
+        queue.add(block);
     }
 
     @Override
     public List<SourceRecord> poll() throws InterruptedException {
+        ArrayList<SourceRecord> records = new ArrayList<>();
 
-        // TODO is there a more concise way to read this stream?  The Kafka sample code suggests that readLine() will not work correctly
+        log.info("Polling EthereumSourceTask");
 
-        //read as much as we can through the pipe
-        try {
-            final BufferedReader readerCopy;
-            synchronized (this) {
-                readerCopy = reader;
-            }
-            if (readerCopy == null)
-                return null;
 
-            ArrayList<SourceRecord> records = null;
+        while (true) {
+            if (queue.isEmpty()) {
+                log.info("Queue is empty, yielding ...");
+                // yield
+                Thread.sleep(1000);
+            } else {
+                EthBlock.Block block = queue.remove();
+                List<EthBlock.TransactionResult> transactions = block.getTransactions();
+                log.info("Writing block to message array. block=" + block.getNumber() + " size=" + transactions.size());
+                for (EthBlock.TransactionResult tx : transactions)
+                {
+                    EthBlock.TransactionObject txObj = (EthBlock.TransactionObject) tx;
+                    EthTransaction etx = Web3jAdapter.web3jTransaction2EthTransaction(txObj);
 
-            int nread = 0;
-            while (readerCopy.ready()) {
-                nread = readerCopy.read(buffer, offset, buffer.length - offset);
-                log.trace("Read {} bytes from {}", nread, logFilename());
-
-                if (nread > 0) {
-                    offset += nread;
-                    if (offset == buffer.length) {
-                        char[] newbuf = new char[buffer.length * 2];
-                        System.arraycopy(buffer, 0, newbuf, 0, buffer.length);
-                        buffer = newbuf;
-                    }
-
-                    String line;
-                    do {
-                        line = extractLine();
-                        if (line != null) {
-                            log.trace("Read a line from {}", logFilename());
-                            if (records == null)
-                                records = new ArrayList<>();
-                            records.add(new SourceRecord(offsetKey(endPoint), offsetValue(streamOffset), topic, null,
-                                    null, null, VALUE_SCHEMA, line, System.currentTimeMillis()));
-
-                            if (records.size() >= batchSize) {
-                                return records;
-                            }
-                        }
-                    } while (line != null);
+                    log.info("Writing transaction to message array. block=" + txObj.getBlockNumber() + " size=" + transactions.size() + " offset=" + txObj.getTransactionIndex());
+                    records.add(new SourceRecord(
+                            offsetKey(endpoint),
+                            offsetValue(txObj.getBlockNumber(),transactions.size(),txObj.getTransactionIndex()),
+                            topic,
+                            null,
+                            null,
+                            null,
+                            VALUE_SCHEMA,
+                            etx.asAvroJson(),
+                            System.currentTimeMillis()
+                    ));
+                }
+                if (records.size() >= batchSize) {
+                    log.info("Returning from poll() with " + records.size() + " records");
+                    return records;
                 }
             }
-
-            if (nread <= 0)
-                synchronized (this) {
-                    this.wait(1000);
-                }
-
-            return records;
-        } catch (IOException e) {
-            // Underlying stream was killed, probably as a result of calling stop. Allow to return
-            // null, and driving thread will handle any shutdown if necessary.
-        }
-        return null;
-    }
-
-    private String extractLine() {
-        int until = -1, newStart = -1;
-        for (int i = 0; i < offset; i++) {
-            if (buffer[i] == '\n') {
-                until = i;
-                newStart = i + 1;
-                break;
-            } else if (buffer[i] == '\r') {
-                // We need to check for \r\n, so we must skip this if we can't check the next char
-                if (i + 1 >= offset)
-                    return null;
-
-                until = i;
-                newStart = (buffer[i + 1] == '\n') ? i + 2 : i + 1;
-                break;
-            }
-        }
-
-        if (until != -1) {
-            String result = new String(buffer, 0, until);
-            System.arraycopy(buffer, newStart, buffer, 0, buffer.length - newStart);
-            offset = offset - newStart;
-            if (streamOffset != null)
-                streamOffset += newStart;
-            return result;
-        } else {
-            return null;
         }
     }
 
     @Override
     public void stop() {
-        log.trace("Stopping");
-        pw.close();
-        // TODO
-//        synchronized (this) {
-//            try {
-//                if (stream != null && stream != System.in) {
-//                    stream.close();
-//                    log.trace("Closed input stream");
-//                }
-//            } catch (IOException e) {
-//                log.error("Failed to close EthereumSourceTask stream: ", e);
-//            }
-//            this.notify();
-//        }
+        log.trace("Stopping EthereumSourceTask");
+        synchronized (this) {
+            this.notify();
+        }
     }
 
     private Map<String, String> offsetKey(String filename) {
         return Collections.singletonMap(ENDPOINT_FIELD, filename);
     }
 
-    private Map<String, Long> offsetValue(Long pos) {
-        return Collections.singletonMap(POSITION_FIELD, pos);
+    private Map<String, Long> offsetValue(BigInteger block, long transactionsInBlock, BigInteger transactionOffset) {
+        return new HashMap<String, Long>() {{
+           put(BLOCK_FIELD, block.longValue());
+           put(TXN_COUNT_FIELD, transactionsInBlock);
+           put(TXN_OFFSET_FIELD, transactionOffset.longValue());
+        }};
     }
 
     private String logFilename() {
-        return endPoint == null ? "null" : endPoint;
+        return endpoint == null ? "null" : endpoint;
     }
 
-    /**
-     * Initialize web3j.
-     */
-    private void initializeWeb3j() throws Exception {
-
-        if (endPoint == null || endPoint.isEmpty()) {
-            log.error("Specify endpoint");
-            throw new Exception("Specify endpoint");
-        } else if (endPoint.contains(".ipc")) {
-            throw new Exception(".ipc endpoint not supported");
-        } else {
-            log.info("Connecting via Endpoint - " + endPoint);
-            web3j = Web3j.build(new HttpService(endPoint));
-        }
-    }
 }

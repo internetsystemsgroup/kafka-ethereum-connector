@@ -46,7 +46,7 @@ public class EthereumSourceConnector extends SourceConnector {
             .define(TASK_BATCH_SIZE_CONFIG, Type.INT, DEFAULT_TASK_BATCH_SIZE, Importance.LOW,
                     "The maximum number of records the Source task can read from file one time");
 
-    private String filename;
+    private String endpoint;
     private String topic;
     private int batchSize;
 
@@ -58,13 +58,19 @@ public class EthereumSourceConnector extends SourceConnector {
     @Override
     public void start(Map<String, String> props) {
         AbstractConfig parsedConfig = new AbstractConfig(CONFIG_DEF, props);
-        filename = parsedConfig.getString(ENDPOINT_CONFIG);
+        endpoint = parsedConfig.getString(ENDPOINT_CONFIG);
         List<String> topics = parsedConfig.getList(TOPIC_CONFIG);
         if (topics.size() != 1) {
             throw new ConfigException("'topic' in EthereumSourceConnector configuration requires definition of a single topic");
         }
         topic = topics.get(0);
         batchSize = parsedConfig.getInt(TASK_BATCH_SIZE_CONFIG);
+
+        if (endpoint == null || endpoint.isEmpty()) {
+            throw new ConfigException("Specify endpoint");
+        } else if (endpoint.contains(".ipc")) {
+            throw new ConfigException(".ipc endpoint not supported");
+        }
     }
 
     @Override
@@ -77,8 +83,8 @@ public class EthereumSourceConnector extends SourceConnector {
         ArrayList<Map<String, String>> configs = new ArrayList<>();
         // Only one input stream makes sense.
         Map<String, String> config = new HashMap<>();
-        if (filename != null)
-            config.put(ENDPOINT_CONFIG, filename);
+        if (endpoint != null)
+            config.put(ENDPOINT_CONFIG, endpoint);
         config.put(TOPIC_CONFIG, topic);
         config.put(TASK_BATCH_SIZE_CONFIG, String.valueOf(batchSize));
         configs.add(config);
