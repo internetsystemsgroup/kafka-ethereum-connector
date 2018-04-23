@@ -19,10 +19,6 @@
 */
 package com.internetsystemsgroup.kafka;
 
-import java.math.BigInteger;
-import java.util.*;
-import java.util.concurrent.ConcurrentLinkedQueue;
-
 import com.internetsystemsgroup.ethereum.EthereumTransaction;
 import com.internetsystemsgroup.ethereum.Web3jAdapter;
 import org.apache.kafka.connect.data.Schema;
@@ -35,15 +31,19 @@ import org.web3j.protocol.core.DefaultBlockParameter;
 import org.web3j.protocol.core.methods.response.EthBlock;
 import org.web3j.protocol.http.HttpService;
 
+import java.math.BigInteger;
+import java.util.*;
+import java.util.concurrent.ConcurrentLinkedQueue;
+
 /**
  * EthereumSourceTask reads transactions from an Ethereum server using the web3j API
  */
 public class EthereumSourceTask extends SourceTask {
     private static final Logger log = LoggerFactory.getLogger(EthereumSourceTask.class);
     private static final String ENDPOINT_FIELD = "endpoint";
-    private  static final String BLOCK_FIELD = "block";
-    private  static final String TXN_COUNT_FIELD = "size";
-    private  static final String TXN_OFFSET_FIELD = "offset";
+    private static final String BLOCK_FIELD = "block";
+    private static final String TXN_COUNT_FIELD = "size";
+    private static final String TXN_OFFSET_FIELD = "offset";
 
     private static final Schema VALUE_SCHEMA = Schema.STRING_SCHEMA;
 
@@ -95,12 +95,12 @@ public class EthereumSourceTask extends SourceTask {
             startingOffset = BigInteger.ZERO;
         }
 
-        web3j.catchUpToLatestAndSubscribeToNewBlocksObservable(DefaultBlockParameter.valueOf(startingBlock), true)
+        web3j.catchUpToLatestAndSubscribeToNewBlocksObservable(
+                DefaultBlockParameter.valueOf(startingBlock), true)
                 .subscribe(this::writeBlockToQueue);
     }
 
-    private void writeBlockToQueue(EthBlock response)
-    {
+    private void writeBlockToQueue(EthBlock response) {
         EthBlock.Block block = response.getResult();
         log.info("Writing block to queue: " + block.getNumber());
 
@@ -122,7 +122,8 @@ public class EthereumSourceTask extends SourceTask {
             } else {
                 EthBlock.Block block = queue.remove();
                 List<EthBlock.TransactionResult> transactions = block.getTransactions();
-                log.info("Writing block to message array. block=" + block.getNumber() + " size=" + transactions.size());
+                log.info("Writing block to message array. block = " + block.getNumber() +
+                        ", size = " + transactions.size());
                 if (transactions.size() == 0) {
                     records.add(new SourceRecord(
                             offsetKey(endpoint),
@@ -138,15 +139,20 @@ public class EthereumSourceTask extends SourceTask {
                 } else {
                     for (EthBlock.TransactionResult tx : transactions) {
                         EthBlock.TransactionObject txObj = (EthBlock.TransactionObject) tx;
-                        log.info("this tran index = " + txObj.getTransactionIndex().longValue() + " vs startingOffset = " + startingOffset.longValue());
+                        log.info("this tran index = " + txObj.getTransactionIndex().longValue() +
+                                " vs startingOffset = " + startingOffset.longValue());
                         if (txObj.getTransactionIndex().longValue() < startingOffset.longValue())
                             continue;
-                        EthereumTransaction etx = Web3jAdapter.web3jTransaction2EthereumTransaction(txObj);
+                        EthereumTransaction etx = Web3jAdapter
+                                .web3jTransaction2EthereumTransaction(txObj);
 
-                        log.info("Writing transaction to message array. block=" + txObj.getBlockNumber() + " size=" + transactions.size() + " offset=" + txObj.getTransactionIndex());
+                        log.info("Writing transaction to message array. block = " +
+                                txObj.getBlockNumber() + " size = " + transactions.size() +
+                                " offset = " + txObj.getTransactionIndex());
                         records.add(new SourceRecord(
                                 offsetKey(endpoint),
-                                offsetValue(txObj.getBlockNumber(), transactions.size(), txObj.getTransactionIndex()),
+                                offsetValue(txObj.getBlockNumber(), transactions.size(),
+                                        txObj.getTransactionIndex()),
                                 topic,
                                 null,
                                 null,
@@ -183,9 +189,9 @@ public class EthereumSourceTask extends SourceTask {
                                           BigInteger transactionOffset) {
 
         return new HashMap<String, Long>() {{
-           put(BLOCK_FIELD, block.longValue());
-           put(TXN_COUNT_FIELD, transactionsInBlock);
-           put(TXN_OFFSET_FIELD, transactionOffset.longValue());
+            put(BLOCK_FIELD, block.longValue());
+            put(TXN_COUNT_FIELD, transactionsInBlock);
+            put(TXN_OFFSET_FIELD, transactionOffset.longValue());
         }};
     }
 }
