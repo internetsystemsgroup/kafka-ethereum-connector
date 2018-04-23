@@ -49,3 +49,10 @@ The following instructions assume the following directory structure:
    >../kafka_2.12-1.1.0/bin/connect-standalone.sh config/connect-standalone.properties config/connect-ethereum-source.properties 
    
 8. Verify that transactions are being printed in the subscriber (See step 6. above)   
+
+## Running the program
+
+If you need to restart the system without a history (perhaps due to a change
+in the serialization scheme), delete the file specified in file
+connect-standalone.properties as property "offset.storage.file.filename"
+(currently defaulted to "/tmp/connect.offsets")
