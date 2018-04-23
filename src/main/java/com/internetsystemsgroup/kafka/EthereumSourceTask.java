@@ -23,7 +23,6 @@ import java.math.BigInteger;
 import java.util.*;
 import java.util.concurrent.ConcurrentLinkedQueue;
 
-import com.internetsystemsgroup.ethereum.EthTransaction;
 import com.internetsystemsgroup.ethereum.EthereumTransaction;
 import com.internetsystemsgroup.ethereum.Web3jAdapter;
 import org.apache.kafka.connect.data.Schema;
@@ -35,9 +34,6 @@ import org.web3j.protocol.Web3j;
 import org.web3j.protocol.core.DefaultBlockParameter;
 import org.web3j.protocol.core.methods.response.EthBlock;
 import org.web3j.protocol.http.HttpService;
-import scala.None;
-import scala.Option;
-import scala.Some;
 
 /**
  * EthereumSourceTask reads transactions from an Ethereum server using the web3j API
@@ -58,10 +54,7 @@ public class EthereumSourceTask extends SourceTask {
     private String topic = null;
     private int batchSize = EthereumSourceConnector.DEFAULT_TASK_BATCH_SIZE;
 
-    private BigInteger startingBlock;
     private BigInteger startingOffset;
-
-    private Web3j web3j;
 
 
     @Override
@@ -78,13 +71,14 @@ public class EthereumSourceTask extends SourceTask {
 
         // configuration is validated in the Connector class
         log.info("Connecting to Ethereum node:" + endpoint);
-        web3j = Web3j.build(new HttpService(endpoint));
+        Web3j web3j = Web3j.build(new HttpService(endpoint));
 
         queue = new ConcurrentLinkedQueue<>();
 
         //TODO determine last processed block and transaction
         // Continue from last offset
         Map<String, Object> offset = context.offsetStorageReader().offset(offsetKey(endpoint));
+        BigInteger startingBlock;
         if (offset != null) {
             BigInteger lastRecordedBlock = BigInteger.valueOf((long) offset.get(BLOCK_FIELD));
             BigInteger lastRecordedSize = BigInteger.valueOf((long) offset.get(TXN_COUNT_FIELD));
@@ -97,7 +91,7 @@ public class EthereumSourceTask extends SourceTask {
                 startingOffset = BigInteger.ZERO;
             }
         } else {
-            startingBlock = BigInteger.valueOf(46147);  // The 1st block that contains a transaction
+            startingBlock = BigInteger.valueOf(46147); // The 1st block that contains a transaction
             startingOffset = BigInteger.ZERO;
         }
 
@@ -184,16 +178,14 @@ public class EthereumSourceTask extends SourceTask {
         return Collections.singletonMap(ENDPOINT_FIELD, filename);
     }
 
-    private Map<String, Long> offsetValue(BigInteger block, long transactionsInBlock, BigInteger transactionOffset) {
+    private Map<String, Long> offsetValue(BigInteger block,
+                                          long transactionsInBlock,
+                                          BigInteger transactionOffset) {
+
         return new HashMap<String, Long>() {{
            put(BLOCK_FIELD, block.longValue());
            put(TXN_COUNT_FIELD, transactionsInBlock);
            put(TXN_OFFSET_FIELD, transactionOffset.longValue());
         }};
     }
-
-    private String logFilename() {
-        return endpoint == null ? "null" : endpoint;
-    }
-
 }
