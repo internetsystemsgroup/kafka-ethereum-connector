@@ -113,7 +113,6 @@ public class EthereumSourceTask extends SourceTask {
 
         log.info("Polling EthereumSourceTask");
 
-
         while (true) {
             if (queue.isEmpty()) {
                 log.info("Queue is empty, yielding ...");
