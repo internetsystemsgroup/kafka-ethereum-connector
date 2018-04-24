@@ -49,10 +49,7 @@ public class Web3jTest {
             e.printStackTrace();
         }
 
-        String endpoint;
-
-        endpoint = props.getProperty("endpoint");
-
+        String endpoint = props.getProperty("endpoint");
         web3j = Web3j.build(new HttpService(endpoint));
     }
 
@@ -69,7 +66,8 @@ public class Web3jTest {
         assertThat(tx.getTo(), equalTo(null)); // The contract address is provided in the transactionReceipt
         assertThat(tx.getValue(), equalTo(BigInteger.valueOf(0L)));
         assertThat(tx.getGas(), equalTo(BigInteger.valueOf(1564609)));
-        assertThat(tx.getGasPrice(), equalTo(new BigInteger("10000000000")));  //represents 0.00000001 Ether or (10 Gwei)
+        // Represents 0.00000001 Ether (10 Gwei):
+        assertThat(tx.getGasPrice(), equalTo(new BigInteger("10000000000")));
         // The actual cost/fee is provided in the transactionReceipt
 
         // Verify binary bytecode.  See getContractMetedataSucceedsForVerifiedContract() below.
@@ -81,7 +79,6 @@ public class Web3jTest {
         // Raw values
         assertThat(tx.getBlockNumberRaw(), equalTo("0x47eab9"));
         assertThat(tx.getTransactionIndexRaw(), equalTo("0x47"));
-
     }
 
     @Test
@@ -141,7 +138,8 @@ public class Web3jTest {
         assertThat(tx.getTo(), equalTo("0x85e076361cc813a908ff672f9bad1541474402b2")); //null
         assertThat(tx.getValue(), equalTo(BigInteger.valueOf(0L)));
         assertThat(tx.getGas(), equalTo(BigInteger.valueOf(37647)));
-        assertThat(tx.getGasPrice(), equalTo(new BigInteger("2000000000")));  //represents 0.00000002 Ether or (2 Gwei)
+        // Represents 0.00000002 Ether (2 Gwei):
+        assertThat(tx.getGasPrice(), equalTo(new BigInteger("2000000000")));
 
         // Function: transfer(address _to, uint256 _value)
         final String expectedInput =
