@@ -11,17 +11,17 @@ object EthereumBlockchainTransactionOffset {
 
   def parse(offset: Map[String, Any]): EthereumBlockchainTransactionOffset = {
     new EthereumBlockchainTransactionOffset(
-      BigInteger.valueOf(offset.getOrElse(BlockIdField, 0L).asInstanceOf[Long]),
+      new BigInteger(offset.getOrElse(BlockIdField, "0").asInstanceOf[String]),
       offset.getOrElse(TransactionCountField, 0L).asInstanceOf[Long],
-      BigInteger.valueOf(offset.getOrElse(OffsetField, 0L).asInstanceOf[Long])
+      new BigInteger(offset.getOrElse(OffsetField, "0").asInstanceOf[String])
     )
   }
 
   def parse(offset: java.util.Map[String, Any]): EthereumBlockchainTransactionOffset = {
     new EthereumBlockchainTransactionOffset(
-      BigInteger.valueOf(offset.get(BlockIdField).asInstanceOf[Long]),
+      new BigInteger(offset.get(BlockIdField).asInstanceOf[String]),
       offset.get(TransactionCountField).asInstanceOf[Long],
-      BigInteger.valueOf(offset.get(OffsetField).asInstanceOf[Long])
+      new BigInteger(offset.get(OffsetField).asInstanceOf[String])
     )
   }
 }
@@ -33,9 +33,9 @@ class EthereumBlockchainTransactionOffset(
 ) {
   def toMap(): Map[String, Any] = {
     Map(
-      EthereumBlockchainTransactionOffset.BlockIdField -> blockId,
+      EthereumBlockchainTransactionOffset.BlockIdField -> blockId.toString,
       EthereumBlockchainTransactionOffset.TransactionCountField -> blockTransactionCount,
-      EthereumBlockchainTransactionOffset.OffsetField -> offset
+      EthereumBlockchainTransactionOffset.OffsetField -> offset.toString
     )
   }
 

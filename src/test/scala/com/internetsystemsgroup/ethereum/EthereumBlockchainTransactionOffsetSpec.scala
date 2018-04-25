@@ -18,9 +18,9 @@ class EthereumBlockchainTransactionOffsetSpec extends FunSpec with Matchers {
     describe("parse") {
       it("should create an object when passed a scala.collection.immutable.Map") {
         val map = Map(
-          EthereumBlockchainTransactionOffset.BlockIdField -> 1L,
+          EthereumBlockchainTransactionOffset.BlockIdField -> "1",
           EthereumBlockchainTransactionOffset.TransactionCountField -> 2L,
-          EthereumBlockchainTransactionOffset.OffsetField -> 3L
+          EthereumBlockchainTransactionOffset.OffsetField -> "3"
         )
         val offset = EthereumBlockchainTransactionOffset.parse(map)
         offset.blockId shouldBe new BigInteger("1")
@@ -28,11 +28,22 @@ class EthereumBlockchainTransactionOffsetSpec extends FunSpec with Matchers {
         offset.offset shouldBe new BigInteger("3")
       }
 
+      it("should be able to parse a Map created with toMap including large BigInteger values") {
+        val nTooBigForLong = BigInteger.valueOf(Long.MaxValue).add(BigInteger.ONE)
+        val originalOffset = new EthereumBlockchainTransactionOffset(
+          nTooBigForLong, Long.MaxValue, nTooBigForLong)
+        val map = originalOffset.toMap()
+        val newOffset = EthereumBlockchainTransactionOffset.parse(map)
+        newOffset.blockId shouldBe originalOffset.blockId
+        newOffset.blockTransactionCount shouldBe originalOffset.blockTransactionCount
+        newOffset.offset shouldBe originalOffset.offset
+      }
+
       it("should create an object when passed a java.util.Map") {
         val map = new java.util.HashMap[String, Any] {
-          put(EthereumBlockchainTransactionOffset.BlockIdField, 1L)
+          put(EthereumBlockchainTransactionOffset.BlockIdField, "1")
           put(EthereumBlockchainTransactionOffset.TransactionCountField, 2L)
-          put(EthereumBlockchainTransactionOffset.OffsetField, 3L)
+          put(EthereumBlockchainTransactionOffset.OffsetField, "3")
         }
         val offset = EthereumBlockchainTransactionOffset.parse(map)
         offset.blockId shouldBe new BigInteger("1")
@@ -46,9 +57,9 @@ class EthereumBlockchainTransactionOffsetSpec extends FunSpec with Matchers {
         val offset = new EthereumBlockchainTransactionOffset(
           new BigInteger("1"), 2, new BigInteger("3"))
         val expectedMap = Map(
-          EthereumBlockchainTransactionOffset.BlockIdField -> new BigInteger("1"),
+          EthereumBlockchainTransactionOffset.BlockIdField -> "1",
           EthereumBlockchainTransactionOffset.TransactionCountField -> 2L,
-          EthereumBlockchainTransactionOffset.OffsetField -> new BigInteger("3")
+          EthereumBlockchainTransactionOffset.OffsetField -> "3"
         )
         offset.toMap() shouldBe expectedMap
       }
@@ -59,9 +70,9 @@ class EthereumBlockchainTransactionOffsetSpec extends FunSpec with Matchers {
         val actualMap = new EthereumBlockchainTransactionOffset(
           new BigInteger("1"), 2, new BigInteger("3")).toJavaMap()
         actualMap.size() shouldBe 3
-        actualMap.get(EthereumBlockchainTransactionOffset.BlockIdField) shouldBe new BigInteger("1")
+        actualMap.get(EthereumBlockchainTransactionOffset.BlockIdField) shouldBe "1"
         actualMap.get(EthereumBlockchainTransactionOffset.TransactionCountField) shouldBe 2L
-        actualMap.get(EthereumBlockchainTransactionOffset.OffsetField) shouldBe new BigInteger("3")
+        actualMap.get(EthereumBlockchainTransactionOffset.OffsetField) shouldBe "3"
       }
     }
   }
