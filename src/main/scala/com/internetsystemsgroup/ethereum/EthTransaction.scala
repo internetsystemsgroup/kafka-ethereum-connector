@@ -37,7 +37,7 @@ case class EthTransaction
   to:       String,
   value:    BigDecimal,
   gasPrice: BigDecimal,
-  gas:      BigDecimal,
+  gas:      BigDecimal
 ) {
 
   def asAvroRecord: GenericRecord = {
