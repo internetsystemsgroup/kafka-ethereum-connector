@@ -42,9 +42,6 @@ import java.util.concurrent.ConcurrentLinkedQueue;
 public class EthereumSourceTask extends SourceTask {
     private static final Logger log = LoggerFactory.getLogger(EthereumSourceTask.class);
     private static final String ENDPOINT_FIELD = "endpoint";
-    private static final String BLOCK_FIELD = "block";
-    private static final String TXN_COUNT_FIELD = "size";
-    private static final String TXN_OFFSET_FIELD = "offset";
 
     private static final Schema VALUE_SCHEMA = Schema.STRING_SCHEMA;
 
