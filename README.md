@@ -33,7 +33,7 @@ The following instructions assume the following directory structure:
    
 4. Create a topic
 
-   >bin/kafka-topics.sh --create     --zookeeper localhost:2181     --replication-factor 1     --partitions 1     --topic connect-test
+   >bin/kafka-topics.sh --create --zookeeper localhost:2181 --replication-factor 1 --partitions 1 --topic connect-test
    
 5. List Topics
 
