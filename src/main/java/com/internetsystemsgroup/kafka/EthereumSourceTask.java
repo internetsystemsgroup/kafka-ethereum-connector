@@ -19,6 +19,7 @@
 */
 package com.internetsystemsgroup.kafka;
 
+import com.internetsystemsgroup.ethereum.EthereumBlockchainTransactionOffset;
 import com.internetsystemsgroup.ethereum.EthereumTransaction;
 import com.internetsystemsgroup.ethereum.Web3jAdapter;
 import org.apache.kafka.connect.data.Schema;
@@ -77,16 +78,14 @@ public class EthereumSourceTask extends SourceTask {
 
         //TODO determine last processed block and transaction
         // Continue from last offset
-        Map<String, Object> offset = context.offsetStorageReader().offset(offsetKey(endpoint));
+        Map<String, Object> offsetMap = context.offsetStorageReader().offset(offsetKey(endpoint));
         BigInteger startingBlock;
-        if (offset != null) {
-            BigInteger lastRecordedBlock = BigInteger.valueOf((long) offset.get(BLOCK_FIELD));
-            BigInteger lastRecordedSize = BigInteger.valueOf((long) offset.get(TXN_COUNT_FIELD));
-            BigInteger lastRecordedOffset = BigInteger.valueOf((long) offset.get(TXN_OFFSET_FIELD));
-
-            startingBlock = lastRecordedBlock;
-            startingOffset = lastRecordedOffset.add(BigInteger.ONE);
-            if (startingOffset.longValue() == lastRecordedSize.longValue()) {
+        if (offsetMap != null) {
+            EthereumBlockchainTransactionOffset offset = EthereumBlockchainTransactionOffset
+                    .parse(offsetMap);
+            startingBlock = offset.blockId();
+            startingOffset = offset.offset().add(BigInteger.ONE);
+            if (startingOffset.longValue() == offset.blockTransactionCount()) {
                 startingBlock = startingBlock.add(BigInteger.ONE);
                 startingOffset = BigInteger.ZERO;
             }
@@ -126,7 +125,7 @@ public class EthereumSourceTask extends SourceTask {
                 if (transactions.size() == 0) {
                     records.add(new SourceRecord(
                             offsetKey(endpoint),
-                            offsetValue(block.getNumber(), transactions.size(), BigInteger.ZERO),
+                            offsetMap(block.getNumber(), transactions.size(), BigInteger.ZERO),
                             topic,
                             null,
                             null,
@@ -150,7 +149,7 @@ public class EthereumSourceTask extends SourceTask {
                                 " offset = " + txObj.getTransactionIndex());
                         records.add(new SourceRecord(
                                 offsetKey(endpoint),
-                                offsetValue(txObj.getBlockNumber(), transactions.size(),
+                                offsetMap(txObj.getBlockNumber(), transactions.size(),
                                         txObj.getTransactionIndex()),
                                 topic,
                                 null,
@@ -183,14 +182,12 @@ public class EthereumSourceTask extends SourceTask {
         return Collections.singletonMap(ENDPOINT_FIELD, filename);
     }
 
-    private Map<String, Long> offsetValue(BigInteger block,
-                                          long transactionsInBlock,
-                                          BigInteger transactionOffset) {
-
-        return new HashMap<String, Long>() {{
-            put(BLOCK_FIELD, block.longValue());
-            put(TXN_COUNT_FIELD, transactionsInBlock);
-            put(TXN_OFFSET_FIELD, transactionOffset.longValue());
-        }};
+    private Map<String, Object> offsetMap(
+            BigInteger blockId,
+            long blockTransactionCount,
+            BigInteger transactionOffset
+    ) {
+        return (new EthereumBlockchainTransactionOffset(blockId, blockTransactionCount,
+                transactionOffset)).toJavaMap();
     }
 }
